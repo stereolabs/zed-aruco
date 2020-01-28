@@ -540,7 +540,7 @@ void PointCloud::initialize(unsigned int width, unsigned int height, CUcontext c
     shader_ = Shader(POINTCLOUD_VERTEX_SHADER, POINTCLOUD_FRAGMENT_SHADER);
     shMVPMatrixLoc_ = glGetUniformLocation(shader_.getProgramId(), "u_mvpMatrix");
 
-    matGPU_.alloc(width_, height_, sl::MAT_TYPE_32F_C4, sl::MEM_GPU);
+    matGPU_.alloc(width_, height_, sl::MAT_TYPE::F32_C4, sl::MEM::GPU);
     initialized_ = true;
 }
 
@@ -548,7 +548,7 @@ void PointCloud::pushNewPC(sl::Mat &matXYZRGBA) {
     if (initialized_) {
         lock = true;
         cuCtxSetCurrent(cuda_zed_ctx);
-        matGPU_.setFrom(matXYZRGBA, sl::COPY_TYPE_GPU_GPU);
+        matGPU_.setFrom(matXYZRGBA, sl::COPY_TYPE::GPU_GPU);
         hasNewPCL_ = true;
         lock = false;
     }
@@ -565,7 +565,7 @@ void PointCloud::update() {
         if (err != cudaSuccess)
             std::cerr << "Error: CUDA GetMappedPointer (" << err << ")" << std::endl;
 
-        err = cudaMemcpy(xyzrgbaMappedBuf_, matGPU_.getPtr<sl::float4>(sl::MEM_GPU), numBytes_, cudaMemcpyDeviceToDevice);
+        err = cudaMemcpy(xyzrgbaMappedBuf_, matGPU_.getPtr<sl::float4>(sl::MEM::GPU), numBytes_, cudaMemcpyDeviceToDevice);
         if (err != cudaSuccess)
             std::cerr << "Error: CUDA MemCpy (" << err << ")" << std::endl;
 

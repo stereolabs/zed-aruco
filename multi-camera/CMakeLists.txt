@@ -59,5 +59,5 @@ TARGET_LINK_LIBRARIES(${ProjectName}
 			${OpenCV_LIBRARIES}
 			${OPENGL_LIBRARIES}
 			${GLUT_LIBRARY}
-			${GLEW_LIBRARY})
+                        ${GLEW_LIBRARIES})
 

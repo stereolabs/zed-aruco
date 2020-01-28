@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////
 //
-// Copyright (c) 2019, STEREOLABS.
+// Copyright (c) 2020, STEREOLABS.
 //
 // All rights reserved.
 //
@@ -43,24 +43,25 @@ int main(int argc, char **argv) {
 
     // Set configuration parameters
     InitParameters init_params;
-    init_params.camera_resolution = RESOLUTION_HD720;
-    init_params.coordinate_units = UNIT_METER;
-    init_params.camera_disable_imu = true; // for this sample, IMU (of ZED-M) is disable, we use the gravity given by the marker.
+    init_params.camera_resolution = RESOLUTION::HD720;
+    init_params.coordinate_units = UNIT::METER;
+    init_params.sensors_required = false;
 
     // Open the camera
     ERROR_CODE err = zed.open(init_params);
-    if (err != SUCCESS) {
+    if (err != ERROR_CODE::SUCCESS) {
         cout << "Error, unable to open ZED camera: " << err << "\n";
         zed.close();
         return 1; // Quit if an error occurred
     }
 
-    Resolution image_size = zed.getResolution();
-    Mat image_zed(image_size, MAT_TYPE_8U_C4);
-    cv::Mat image_ocv = cv::Mat(image_zed.getHeight(), image_zed.getWidth(), CV_8UC4, image_zed.getPtr<sl::uchar1>(MEM_CPU));
+    auto cameraInfo = zed.getCameraInformation();
+    Resolution image_size = cameraInfo.camera_resolution;
+    Mat image_zed(image_size, MAT_TYPE::U8_C4);
+    cv::Mat image_ocv = cv::Mat(image_zed.getHeight(), image_zed.getWidth(), CV_8UC4, image_zed.getPtr<sl::uchar1>(MEM::CPU));
     cv::Mat image_ocv_rgb;
 
-    auto calibInfo = zed.getCameraInformation().calibration_parameters.left_cam;
+    auto calibInfo = cameraInfo.calibration_parameters.left_cam;
     cv::Matx33d camera_matrix = cv::Matx33d::eye();
     camera_matrix(0, 0) = calibInfo.fx;
     camera_matrix(1, 1) = calibInfo.fy;
@@ -83,14 +84,16 @@ int main(int argc, char **argv) {
 
     bool can_reset = false;
 
-    zed.enableTracking();
+    PositionalTrackingParameters tracking_params;
+    tracking_params.enable_imu_fusion = false; // for this sample, IMU (of ZED-M) is disable, we use the gravity given by the marker.
+    zed.enablePositionalTracking(tracking_params);
 
     // Loop until 'q' is pressed
     char key = '.';
     while (key != 'q') {
-        if (zed.grab() == SUCCESS) {
+        if (zed.grab() == ERROR_CODE::SUCCESS) {
             // Retrieve the left image
-            zed.retrieveImage(image_zed, VIEW_LEFT, MEM_CPU, image_size.width, image_size.height);
+            zed.retrieveImage(image_zed, VIEW::LEFT, MEM::CPU, image_size);
 
             // convert to RGB
             cv::cvtColor(image_ocv, image_ocv_rgb, cv::COLOR_RGBA2RGB);
@@ -130,7 +133,7 @@ int main(int argc, char **argv) {
 
             // if KEY_R is pressed and aruco marker is visible, then reset ZED position
             if ((key == ' ') && can_reset)
-                zed.resetTracking(pose);
+                zed.resetPositionalTracking(pose);
         }
     }
     zed.close();
