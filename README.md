@@ -27,3 +27,6 @@ It's important to make sure that the real-world size of the marker matches the s
 ## ArUco detection
 
 The Aruco detection code is taken from OpenCV Contrib module, please refer to the source files for the license information (BSD 3).
+
+## Support
+If you need assistance go to our Community site at https://community.stereolabs.com/
