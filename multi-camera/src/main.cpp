@@ -56,7 +56,9 @@ struct CameraData {
     cv::Mat im_left_ocv;
     cv::Mat im_left_ocv_rgb;
     cv::Matx33d camera_matrix = cv::Matx33d::eye();
-    cv::Matx<float, 4, 1> dist_coeffs = cv::Vec4f::zeros();
+    cv::Matx<float, 4, 1> dist_coeffs = cv::Vec4f::zeros();    
+    sl::Transform aruco_transf;
+
     int id = -1;
     bool is_reloc = false;
     string info;
@@ -79,36 +81,38 @@ GLViewer viewer;
 void run(vector<CameraData> &zeds, ArucoData &acuroData);
 void tryReloc(CameraData &it, ArucoData &acuroData);
 void displayMarker(CameraData &it, ArucoData &acuroData);
+void propagateTransforms(vector<CameraData> &zeds);
 void close();
 
 int main(int argc, char **argv) {
     // Set configuration parameters
     InitParameters init_params;
     init_params.coordinate_units = UNIT::METER;
-    init_params.depth_mode = DEPTH_MODE::ULTRA;
-    init_params.sensors_required = false;
+    init_params.depth_mode = DEPTH_MODE::NEURAL;
+    init_params.camera_fps = 15;
 
-    // detect nummber of connected ZED camera.
+    // detect number of connected ZED camera.
     auto zed_infos = Camera::getDeviceList();
-    int nb_zeds = zed_infos.size();
+    const int nb_zeds = zed_infos.size();
     vector<CameraData> zeds(nb_zeds);
 
     // specify size for the point cloud
-    Resolution res(720, 404);
+    Resolution res(512, 288);
 
     // define Positional Tracking parameters
     PositionalTrackingParameters tracking_params;
     tracking_params.enable_area_memory = false;
-    tracking_params.enable_imu_fusion = false; // for this sample, IMU (of ZED-M) is disable, we use the gravity given by the marker.
+    tracking_params.set_as_static = true;
 
     ArucoData acuroData;
     acuroData.dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_100);
-    acuroData.marker_length = 0.15f; // Size real size of the maker in meter
+    acuroData.marker_length = 0.17f; // Size real size of the maker in meter
 
     cout << "Make sure the ArUco marker is a 6x6 (100), measuring " << acuroData.marker_length * 1000 << " mm" << endl;
 
     int nb_zed_open = 0;
     // try to open all  the connected cameras
+
     for (int i = 0; i < nb_zeds; i++) {
         init_params.input.setFromCameraID(zed_infos[i].id);
         ERROR_CODE err = zeds[i].zed.open(init_params);
@@ -117,7 +121,7 @@ int main(int argc, char **argv) {
             zeds[i].id = i;
             zeds[i].point_cloud.alloc(res, MAT_TYPE::F32_C4, MEM::GPU);
             // retrieve camera calibration information for aruco detection
-            auto camCalib = zeds[i].zed.getCameraInformation().calibration_parameters.left_cam;
+            auto camCalib = zeds[i].zed.getCameraInformation().camera_configuration.calibration_parameters.left_cam;
             zeds[i].camera_matrix(0, 0) = camCalib.fx;
             zeds[i].camera_matrix(1, 1) = camCalib.fy;
             zeds[i].camera_matrix(0, 2) = camCalib.cx;
@@ -127,10 +131,11 @@ int main(int argc, char **argv) {
             zeds[i].im_left_ocv = cv::Mat(zeds[i].im_left.getHeight(), zeds[i].im_left.getWidth(), CV_8UC4, zeds[i].im_left.getPtr<sl::uchar1>(MEM::CPU));
             zeds[i].im_left_ocv_rgb = cv::Mat(zeds[i].im_left.getHeight(), zeds[i].im_left.getWidth(), CV_8UC3);
 
-            // start Positional tracking (will be reset with the marker position)
+            // start Positional tracking (will be reset with the marker position)            
             zeds[i].zed.enablePositionalTracking(tracking_params);
 
-            zeds[i].info = std::string(toString(zed_infos[i].camera_model)) + " " + to_string(zed_infos[i].id) + " SN" + std::to_string(zed_infos[i].serial_number);
+            zeds[i].info = "[" + std::to_string(i) + "] " + std::string(toString(zeds[i].zed.getCameraInformation().camera_model).c_str()) + " SN" + std::to_string(zeds[i].zed.getCameraInformation().serial_number);
+
             cout << "Opening " << zeds[i].info << endl;
         }
     }
@@ -166,8 +171,29 @@ int main(int argc, char **argv) {
 
     for (auto &it : zeds)
         it.zed.close();
-
     return 0;
+}
+
+/**
+        This function calculates the positions of all the cameras with respect to the first one
+ **/
+void propagateTransforms(vector<CameraData> &zeds) {
+    sl::Transform ref_aruco;
+    sl::Transform ref_cam_pose_gravity;
+    bool first_cam = true;
+    for (auto &it : zeds) {
+        if(first_cam) {
+            ref_aruco = it.aruco_transf;
+            sl::Pose cam_pose;
+            it.zed.getPosition(cam_pose);
+            ref_cam_pose_gravity = cam_pose.pose_data;
+            first_cam = false;
+        } else {
+            sl::Transform this_to_ref = sl::Transform::inverse(ref_aruco) * it.aruco_transf;
+            sl::Transform cam_pose_gravity = ref_cam_pose_gravity * this_to_ref;
+            it.zed.resetPositionalTracking(cam_pose_gravity);
+        }
+    }
 }
 
 /**
@@ -178,25 +204,44 @@ void run(vector<CameraData> &zeds, ArucoData &acuroData) {
     RuntimeParameters rt_p;
     // ask for point cloud in World Frame, then they will be displayed with the same reference
     rt_p.measure3D_reference_frame = REFERENCE_FRAME::WORLD;
+    rt_p.confidence_threshold = 10;
+
+    bool not_aligned = true;
 
     while (!quit) {
+        bool all_cam_located = true;
         for (auto &it : zeds) { // for all camera
             if (it.zed.grab(rt_p) == ERROR_CODE::SUCCESS) { // grab new image	
                 it.zed.retrieveImage(it.im_left);
                 displayMarker(it, acuroData);
-                if (!it.is_reloc) { // if still ne relocated, grab left image and look for ArUco pattern
-                    tryReloc(it, acuroData);
-                } else { // if relocated, grab point cloud and draw it
-                    it.zed.retrieveMeasure(it.point_cloud, MEASURE::XYZRGBA, MEM::GPU, it.point_cloud.getResolution());
-                    viewer.updatePointCloud(it.point_cloud, it.id);
-                }
+                if (!it.is_reloc)  // if still ne relocated, grab left image and look for ArUco pattern
+                    tryReloc(it, acuroData);                
+                all_cam_located = all_cam_located & it.is_reloc;    
             }
         }
 
+        if(all_cam_located){
+            if(not_aligned) {
+                propagateTransforms(zeds);
+                not_aligned = false;
+            }
+
+            for (auto &it : zeds) { // for all camera
+                it.zed.retrieveMeasure(it.point_cloud, MEASURE::XYZRGBA, MEM::GPU, it.point_cloud.getResolution());
+                viewer.updatePointCloud(it.point_cloud, it.id);
+            }
+        }
+
+
         if (viewer.askReset()) { // you can force a new reloc by pressing 'space' from the 3D view;
             cout << "Reset asked\n";
-            for (auto &it : zeds)
+            all_cam_located = false;
+            not_aligned = true;
+            for (auto &it : zeds){
                 it.is_reloc = false;
+                sl::Transform path_identity;
+                it.zed.resetPositionalTracking(path_identity);
+            }
         }
         sleep_ms(1);
     }
@@ -214,14 +259,10 @@ void tryReloc(CameraData &it, ArucoData &acuroData) {
         cv::aruco::estimatePoseSingleMarkers(corners, acuroData.marker_length, it.camera_matrix, it.dist_coeffs, rvecs, tvecs);
 
         //compute a Transform based on the first marker data
-        Transform pose;
-        pose.setTranslation(sl::float3(tvecs[0](0), tvecs[0](1), tvecs[0](2)));
-        pose.setRotationVector(sl::float3(rvecs[0](0), rvecs[0](1), rvecs[0](2)));
-        pose.inverse();
-        // reset the ZED Positional tracking with the position given by the marker
-        it.zed.resetPositionalTracking(pose);
-        it.is_reloc = true;
-        cout << "ZED " << it.id << " is relocated\n";
+        it.aruco_transf.setTranslation(sl::float3(tvecs[0](0), tvecs[0](1), tvecs[0](2)));
+        it.aruco_transf.setRotationVector(sl::float3(rvecs[0](0), rvecs[0](1), rvecs[0](2)));        
+        it.aruco_transf.inverse();
+        it.is_reloc = true; 
     }
 }
 
