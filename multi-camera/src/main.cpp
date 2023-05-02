@@ -34,6 +34,7 @@
 
 // ZED includes
 #include <sl/Camera.hpp>
+#include <sl/Fusion.hpp>
 
 // OCV includes
 #include <opencv2/opencv.hpp>
@@ -68,7 +69,7 @@ struct CameraData {
 ArUco related data
  */
 struct ArucoData {
-    cv::aruco::Dictionary dictionary;
+    aruco::Dictionary dictionary;
     float marker_length;
 };
 
@@ -88,8 +89,8 @@ int main(int argc, char **argv) {
     // Set configuration parameters
     InitParameters init_params;
     init_params.coordinate_units = UNIT::METER;
-    init_params.depth_mode = DEPTH_MODE::NEURAL;
-    init_params.camera_fps = 15;
+    //init_params.depth_mode = DEPTH_MODE::NEURAL;
+    init_params.camera_fps = 30;
 
     // detect number of connected ZED camera.
     auto zed_infos = Camera::getDeviceList();
@@ -105,8 +106,8 @@ int main(int argc, char **argv) {
     tracking_params.set_as_static = true;
 
     ArucoData acuroData;
-    acuroData.dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_100);
-    acuroData.marker_length = 0.17f; // Size real size of the maker in meter
+    acuroData.dictionary = aruco::getPredefinedDictionary(aruco::DICT_6X6_100);
+    acuroData.marker_length = 0.13f; // Size real size of the maker in meter
 
     cout << "Make sure the ArUco marker is a 6x6 (100), measuring " << acuroData.marker_length * 1000 << " mm" << endl;
 
@@ -181,7 +182,10 @@ void propagateTransforms(vector<CameraData> &zeds) {
     sl::Transform ref_aruco;
     sl::Transform ref_cam_pose_gravity;
     bool first_cam = true;
-    for (auto &it : zeds) {
+
+    std::vector<FusionConfiguration> cam_config;
+    for (auto &it : zeds) {       
+        FusionConfiguration config; 
         if(first_cam) {
             ref_aruco = it.aruco_transf;
             sl::Pose cam_pose;
@@ -192,8 +196,18 @@ void propagateTransforms(vector<CameraData> &zeds) {
             sl::Transform this_to_ref = sl::Transform::inverse(ref_aruco) * it.aruco_transf;
             sl::Transform cam_pose_gravity = ref_cam_pose_gravity * this_to_ref;
             it.zed.resetPositionalTracking(cam_pose_gravity);
+            // the IMU is direclty applied by the SDK
+            config.pose = this_to_ref;
         }
+        // set camera configuration
+        config.communication_parameters.setForSharedMemory();
+        config.serial_number = it.zed.getCameraInformation().serial_number;
+        config.input_type.setFromSerialNumber(config.serial_number);
+        cam_config.push_back(config);
     }
+
+    // export camera configuration to use fusion module
+    sl::writeConfigurationFile("MultiCamConfig.json", cam_config, COORDINATE_SYSTEM::IMAGE, UNIT::METER);
 }
 
 /**
@@ -252,11 +266,11 @@ void tryReloc(CameraData &it, ArucoData &acuroData) {
     vector<vector<cv::Point2f> > corners;
 
     cv::cvtColor(it.im_left_ocv, it.im_left_ocv_rgb, cv::COLOR_RGBA2RGB);
-    cv::aruco::detectMarkers(it.im_left_ocv_rgb, acuroData.dictionary, corners, ids);
+    aruco::detectMarkers(it.im_left_ocv_rgb, acuroData.dictionary, corners, ids);
 
     if (ids.size()) { // an ArUco marker has been detected
         vector<cv::Vec3d> rvecs, tvecs;
-        cv::aruco::estimatePoseSingleMarkers(corners, acuroData.marker_length, it.camera_matrix, it.dist_coeffs, rvecs, tvecs);
+        aruco::estimatePoseSingleMarkers(corners, acuroData.marker_length, it.camera_matrix, it.dist_coeffs, rvecs, tvecs);
 
         //compute a Transform based on the first marker data
         it.aruco_transf.setTranslation(sl::float3(tvecs[0](0), tvecs[0](1), tvecs[0](2)));
@@ -271,15 +285,15 @@ void displayMarker(CameraData &it, ArucoData &acuroData) {
     vector<vector<cv::Point2f> > corners;
 
     cv::cvtColor(it.im_left_ocv, it.im_left_ocv_rgb, cv::COLOR_RGBA2RGB);
-    cv::aruco::detectMarkers(it.im_left_ocv_rgb, acuroData.dictionary, corners, ids);
+    aruco::detectMarkers(it.im_left_ocv_rgb, acuroData.dictionary, corners, ids);
 
     if (ids.size()) { // an ArUco marker has been detected
         vector<cv::Vec3d> rvecs, tvecs;
-        cv::aruco::estimatePoseSingleMarkers(corners, acuroData.marker_length, it.camera_matrix, it.dist_coeffs, rvecs, tvecs);
+        aruco::estimatePoseSingleMarkers(corners, acuroData.marker_length, it.camera_matrix, it.dist_coeffs, rvecs, tvecs);
 
         // draw the marker
-        cv::aruco::drawDetectedMarkers(it.im_left_ocv_rgb, corners, ids, cv::Scalar(236, 188, 26));
-        cv::aruco::drawAxis(it.im_left_ocv_rgb, it.camera_matrix, it.dist_coeffs, rvecs[0], tvecs[0], acuroData.marker_length * 0.5f);
+        aruco::drawDetectedMarkers(it.im_left_ocv_rgb, corners, ids, cv::Scalar(236, 188, 26));
+        aruco::drawAxis(it.im_left_ocv_rgb, it.camera_matrix, it.dist_coeffs, rvecs[0], tvecs[0], acuroData.marker_length * 0.5f);
     }
 
     cv::imshow(it.info, it.im_left_ocv_rgb);
