@@ -214,7 +214,7 @@ public:
     ~GLViewer();
     void exit();
     bool isEnded();
-    void init(int w, int h, int nb_pc);
+    void init(int argc, char **argv, int w, int h, int nb_pc);
     void updatePointCloud(sl::Mat &matXYZRGBA, int id);
     bool askReset();
 

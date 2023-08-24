@@ -152,7 +152,7 @@ int main(int argc, char **argv) {
     }
 
     // initialise 3D viewer
-    viewer.init(res.width, res.height, nb_zeds);
+    viewer.init(argc, argv,res.width, res.height, nb_zeds);
 
     // Start the camera thread
     quit = false;
