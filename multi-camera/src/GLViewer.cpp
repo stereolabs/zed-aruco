@@ -66,15 +66,12 @@ bool GLViewer::isEnded() {
     return ended_;
 }
 
-void GLViewer::init(int w, int h, int nb_pc) {
+void GLViewer::init(int argc, char **argv, int w, int h, int nb_pc) {
     res.width = w;
     res.height = h;
     cuCtxGetCurrent(&ctx);
 
     pointCloud_.resize(nb_pc);
-	char *argv[1];
-	argv[0] = '\0';
-	int argc = 1;
 	glutInit(&argc, argv);
 	glutInitWindowSize(wnd_w, wnd_h);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
