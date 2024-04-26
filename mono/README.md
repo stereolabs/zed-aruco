@@ -2,8 +2,6 @@
 
 This sample shows how to reset the ZED camera tracking to a known reference using an ArUco marker.
 
-![http://chev.me/arucogen/](../6x6_1000-25.png)
-
 Point the camera to this marker and press the space bar to reset the positional tracking reference.
 This feature can be useful to avoid accumulating drift when moving the camera or to get multiple cameras in the same referential.
 
@@ -15,8 +13,8 @@ This feature can be useful to avoid accumulating drift when moving the camera or
 
 ### Prerequisites
 
-- Windows 7 64bits or later, Ubuntu 16.04 or later
 - [ZED SDK](https://www.stereolabs.com/developers/) and its dependencies ([CUDA](https://developer.nvidia.com/cuda-downloads))
+- A [Stereolabs Stereo Camera](https://www.stereolabs.com/)
 
 ## Build the program
 
@@ -44,8 +42,15 @@ Open a terminal in the sample directory and execute the following command:
 - Navigate to the build directory and launch the executable file
 - Or open a terminal in the build directory and run the sample :
 
-        ./ZED_Reloc_Aruco
+        ./ZED_Reloc_Aruco [path/to/svo] [path/to/aruco_poses.txt]
 
+## Key Bindings
+
+- `p`: pause the video
+- `space`: reset the camera position based on the closest aruco tag
+- `z`: display the world coordinate system axes in the RGB image from the zed positional tracking
+- `a`: display the world coordinate system axes in the RGB image from the aruco detection
+- `d`: toggle the display of the positions of the camera pose estimated by aruco detection
 
 ## ArUco markers
 
