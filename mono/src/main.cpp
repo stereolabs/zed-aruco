@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////
 //
-// Copyright (c) 2020, STEREOLABS.
+// Copyright (c) 2025, STEREOLABS.
 //
 // All rights reserved.
 //
@@ -139,5 +139,4 @@ int main(int argc, char **argv) {
     }
     zed.close();
     return 0;
-
 }
