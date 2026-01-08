@@ -94,6 +94,12 @@ int main(int argc, char **argv) {
 
     // detect number of connected ZED camera.
     auto zed_infos = Camera::getDeviceList();
+
+    // Order cameras by increasing serial number to match Fusion behavior
+    std::sort(zed_infos.begin(), zed_infos.end(),
+              [](const DeviceProperties &a, const DeviceProperties &b) {
+                return a.serial_number < b.serial_number;
+              });
     const int nb_zeds = zed_infos.size();
     vector<CameraData> zeds(nb_zeds);
 
